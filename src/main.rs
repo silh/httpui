@@ -17,6 +17,7 @@ fn main() -> eframe::Result<()> {
 struct Request {
     url: String,
     headers: Vec<(String, String)>,
+    body: String,
 }
 
 struct HttpUIApp {
@@ -41,8 +42,11 @@ impl HttpUIApp {
                     let value = HeaderValue::from_bytes(v.as_bytes()).unwrap();
                     headers.insert(key, value);
                 });
+
+                let body = reqwest::blocking::Body::from(req.body);
                 let txt = client.get(&req.url)
                     .headers(headers)
+                    .body(body)
                     .send()
                     .and_then(|response| response.text())
                     .map_or_else(|e| e.to_string(), |r| r);
@@ -61,6 +65,7 @@ impl HttpUIApp {
             request: Request {
                 url: "http://localhost:8080/".to_owned(),
                 headers,
+                body: String::new(),
             },
         };
     }
@@ -81,6 +86,7 @@ impl eframe::App for HttpUIApp {
                             error!("Failed to send request: {}", err)
                         }
                     }
+                    ui.text_edit_multiline(&mut self.request.body);
                 });
                 self.request.headers.iter_mut().for_each(|(ref mut k, ref mut v)| {
                     ui.horizontal(|ui| {
