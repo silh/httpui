@@ -4,6 +4,8 @@ use hyper::HeaderMap;
 use hyper::http::{HeaderName, HeaderValue};
 use log::error;
 
+mod format;
+
 fn main() -> eframe::Result<()> {
     env_logger::init();
     let native_options = eframe::NativeOptions::default();
@@ -48,7 +50,12 @@ impl HttpUIApp {
                     .headers(headers)
                     .body(body)
                     .send()
-                    .and_then(|response| response.text())
+                    .and_then(|response| {
+                        if let Some(_) = response.headers().get("Content-Type").filter(|v| *v == "application/json") {
+                            return response.text().map(|txt| format::pretty_format_json(&txt));
+                        }
+                        return response.text();
+                    })
                     .map_or_else(|e| e.to_string(), |r| r);
                 if let Err(msg) = ui_sender_ch.send(txt) {
                     error!("Failed to send response result: {}", msg);
@@ -88,12 +95,25 @@ impl eframe::App for HttpUIApp {
                     }
                     ui.text_edit_multiline(&mut self.request.body);
                 });
-                self.request.headers.iter_mut().for_each(|(ref mut k, ref mut v)| {
+                ui.label("Headers:");
+
+                // For every header we want to display its name and value, but we also want to
+                // add a delete button. We can't iterate and call delete while iterating, so we do
+                // retain.
+                self.request.headers.retain_mut(|(ref mut k, ref mut v)| {
+                    let mut result = true;
                     ui.horizontal(|ui| {
                         ui.text_edit_singleline(k);
                         ui.text_edit_singleline(v);
+                        if ui.button("-").clicked() {
+                            result = false;
+                        }
                     });
+                    return result;
                 });
+                if ui.button("+").clicked() {
+                    self.request.headers.push(("".to_owned(), "".to_owned()));
+                }
                 ScrollArea::vertical().show(ui, |ui| {
                     ui.text_edit_multiline(&mut self.response.as_str());
                 });
