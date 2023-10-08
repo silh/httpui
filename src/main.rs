@@ -1,10 +1,11 @@
 use eframe::CreationContext;
 use egui::ScrollArea;
-use hyper::HeaderMap;
+use hyper::{HeaderMap, Method};
 use hyper::http::{HeaderName, HeaderValue};
 use log::error;
 
 mod format;
+mod request;
 
 fn main() -> eframe::Result<()> {
     env_logger::init();
@@ -15,23 +16,16 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc: &CreationContext| Box::new(HttpUIApp::new(cc))));
 }
 
-#[derive(Debug, Clone)]
-struct Request {
-    url: String,
-    headers: Vec<(String, String)>,
-    body: String,
-}
-
 struct HttpUIApp {
     response: String,
-    to_http_sender_ch: std::sync::mpsc::Sender<Request>,
+    to_http_sender_ch: std::sync::mpsc::Sender<request::Request>,
     ui_receiver_ch: std::sync::mpsc::Receiver<String>,
-    request: Request,
+    request: request::Request,
 }
 
 impl HttpUIApp {
-    fn new(_: &eframe::CreationContext<'_>) -> Self {
-        let (http_ch_tx, http_ch_rx) = std::sync::mpsc::channel::<Request>();
+    fn new(_: &CreationContext<'_>) -> Self {
+        let (http_ch_tx, http_ch_rx) = std::sync::mpsc::channel::<request::Request>();
         let (ui_ch_tx, ui_ch_rx) = std::sync::mpsc::channel();
         let ui_sender_ch = ui_ch_tx.clone();
         let client = reqwest::blocking::Client::new();
@@ -46,7 +40,9 @@ impl HttpUIApp {
                 });
 
                 let body = reqwest::blocking::Body::from(req.body);
-                let txt = client.get(&req.url)
+                // should be safe to unwrap as we have the same enum
+                let method = Method::from_bytes(req.method.to_string().as_bytes()).unwrap();
+                let txt = client.request(method, &req.url)
                     .headers(headers)
                     .body(body)
                     .send()
@@ -69,10 +65,11 @@ impl HttpUIApp {
             ui_receiver_ch: ui_ch_rx,
             to_http_sender_ch: http_ch_tx.clone(),
             response: String::new(),
-            request: Request {
+            request: request::Request {
                 url: "http://localhost:8080/".to_owned(),
                 headers,
                 body: String::new(),
+                method: request::Method::Get,
             },
         };
     }
@@ -86,7 +83,20 @@ impl eframe::App for HttpUIApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
                 ui.horizontal(|ui| {
-                    ui.label("URL:");
+                    egui::ComboBox::from_label("Method")
+                        .selected_text(self.request.method.to_string())
+                        .show_ui(ui, |ui| {
+                            // TODO add iteration over enum
+                            ui.selectable_value(&mut self.request.method, request::Method::Options, "OPTIONS");
+                            ui.selectable_value(&mut self.request.method, request::Method::Get, "GET");
+                            ui.selectable_value(&mut self.request.method, request::Method::Post, "POST");
+                            ui.selectable_value(&mut self.request.method, request::Method::Put, "PUT");
+                            ui.selectable_value(&mut self.request.method, request::Method::Delete, "DELETE");
+                            ui.selectable_value(&mut self.request.method, request::Method::Head, "HEAD");
+                            ui.selectable_value(&mut self.request.method, request::Method::Trace, "TRACE");
+                            ui.selectable_value(&mut self.request.method, request::Method::Connect, "CONNECT");
+                            ui.selectable_value(&mut self.request.method, request::Method::Patch, "PATCH");
+                        });
                     ui.text_edit_singleline(&mut self.request.url);
                     if ui.button("Submit").clicked() {
                         if let Err(err) = self.to_http_sender_ch.send(self.request.clone()) {
