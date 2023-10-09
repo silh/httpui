@@ -1,5 +1,4 @@
 /// Simple pretty format for json
-///
 pub fn pretty_format_json(json: &str) -> String {
     let mut result = String::new();
     let indent_level_increment = 2;
@@ -42,8 +41,12 @@ pub fn pretty_format_json(json: &str) -> String {
                 }
             }
             ':' => {
-                result.push(c);
-                result.push(' ');
+                if !in_quotes {
+                    result.push(c);
+                    result.push(' ');
+                } else {
+                    result.push(c)
+                }
             }
             _ => result.push(c),
         }
